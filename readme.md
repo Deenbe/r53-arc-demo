@@ -2,16 +2,24 @@
 This is still very much a work in progress, please contact jonesaws@amazon.com with questions and/or feedback.
 
 ## Prerequisites
-Public Route53 domain
+Public Route53 Hosted Zone
 
-## CloudFormation Components
-## ./templates/3tier_single_az_self_contained_web.yaml
-Application template, deployed into both Sydney and Singapore regions.  The template deploys the following basic application architecture:
+## CloudFormation Templates
+## Application
+
+`./templates/3tier_single_az_self_contained_web.yaml`
+
+Application template, deployed into both a primary and secondary region.  The template deploys the following basic application architecture:
 
 ![Application Architecture](./images/r53_Arc_demo.png)
 
-## ./templates/Route53-arc.yaml
-Shared components, deployed into us-east-1, including:
+## Route53 Application Recovery Controller Common
+
+`./templates/Route53-arc.yaml`
+
+**Must be deployed into us-east-1**
+
+This template deploys shared components including:
 
 - S3 Bucket
 - Cloudwatch Synthetics Canary
@@ -28,7 +36,14 @@ Shared components, deployed into us-east-1, including:
   - Global ResourceSet
   - Global Readiness Check
 
+## Route53 Application Recovery Controller Cell
 
+`./templates/ArcCellResources.yaml`
 
-## ./templates/ArcCellResources.yaml
-Deployed once per cell into us-east-1
+**Must be deployed into us-east-1**
+
+Deployed once per cell into us-east-1 and creates cell specific components including:
+
+- Route53 Arc
+  - Resource Sets
+  - Readiness Checks
