@@ -31,4 +31,4 @@ Shared components, deployed into us-east-1, including:
 
 
 ## ./templates/ArcCellResources.yaml
-Deployed once per cell into us-east-2
+Deployed once per cell into us-east-1
