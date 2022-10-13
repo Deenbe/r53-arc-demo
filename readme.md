@@ -11,7 +11,24 @@ Application template, deployed into both Sydney and Singapore regions.  The temp
 ![Application Architecture](./images/r53_Arc_demo.png)
 
 ## ./templates/Route53-arc.yaml
-Shared Route53 components, deployed into us-east-1
+Shared components, deployed into us-east-1, including:
+
+- S3 Bucket
+- Cloudwatch Synthetics Canary
+- Route53
+  - Healthchecks
+  - Weighted RecordSet
+- Route53 Arc
+  - Cluster
+  - Control Panel
+  - Safety Rule
+  - Routing Controls
+  - Recovery Group
+  - Cells
+  - Global ResourceSet
+  - Global Readiness Check
+
+
 
 ## ./templates/ArcCellResources.yaml
 Deployed once per cell into us-east-2
