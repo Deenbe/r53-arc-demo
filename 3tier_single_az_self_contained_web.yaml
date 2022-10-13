@@ -1,0 +1,873 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC CloudFormation Stack
+Parameters:
+  CIDRRange:
+    Description: VPCCIDR Range (will be a /16 block)
+    Type: String
+    Default: 10.251.0.0
+    AllowedValues:
+      - 10.250.0.0
+      - 10.251.0.0
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  CerticateFqDomainName:
+    Type: String
+  PrimaryRegion:
+    Description: Is this a Primary region?
+    Type: String
+    Default: 'Yes'
+    AllowedValues:
+      - 'Yes'
+      - 'No'
+Conditions:
+  IsPrimaryRegion: !Equals 
+    - !Ref PrimaryRegion
+    - 'Yes'
+Mappings:
+  VPCRanges:
+    10.250.0.0:
+      PublicSubnetAZ1: 10.250.1.0/24
+      PublicSubnetAZ2: 10.250.2.0/24
+      PrivateSubnetAZ1: 10.250.3.0/24
+      PrivateSubnetAZ2: 10.250.4.0/24
+      ProtectedSubnetAZ1: 10.250.5.0/24
+      ProtectedSubnetAZ2: 10.250.6.0/24
+    10.251.0.0:
+      PublicSubnetAZ1: 10.251.1.0/24
+      PublicSubnetAZ2: 10.251.2.0/24
+      PrivateSubnetAZ1: 10.251.3.0/24
+      PrivateSubnetAZ2: 10.251.4.0/24
+      ProtectedSubnetAZ1: 10.251.5.0/24
+      ProtectedSubnetAZ2: 10.251.6.0/24
+  
+Resources:
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: 'jonesaws@amazon.com'
+          Protocol: email
+  VPCBase:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Join
+        - ''
+        - - !Ref 'CIDRRange'
+          - /16
+      EnableDnsSupport: True
+      EnableDnsHostnames: True
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -VPC
+  
+  PublicNetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !FindInMap
+        - VPCRanges
+        - !Ref 'CIDRRange'
+        - PublicSubnetAZ1
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PublicAZ1
+      VpcId: !Ref 'VPCBase'
+  
+  PublicNetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !FindInMap
+        - VPCRanges
+        - !Ref 'CIDRRange'
+        - PublicSubnetAZ2
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PublicAZ2
+      VpcId: !Ref 'VPCBase'
+
+  PrivateNetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !FindInMap
+        - VPCRanges
+        - !Ref 'CIDRRange'
+        - PrivateSubnetAZ1
+      MapPublicIpOnLaunch: False
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PrivAppAZ1
+        - Key: Network
+          Value: private
+      VpcId: !Ref 'VPCBase'
+  
+  PrivateNetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !FindInMap
+        - VPCRanges
+        - !Ref 'CIDRRange'
+        - PrivateSubnetAZ2
+      MapPublicIpOnLaunch: False
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PrivAppAZ2
+        - Key: Network
+          Value: private
+      VpcId: !Ref 'VPCBase'
+
+  ProtectedNetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - '0'
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !FindInMap
+        - VPCRanges
+        - !Ref 'CIDRRange'
+        - ProtectedSubnetAZ1
+      MapPublicIpOnLaunch: False
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PrivProtectedAZ1
+        - Key: Network
+          Value: private
+      VpcId: !Ref 'VPCBase'
+  
+  ProtectedNetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select
+        - '1'
+        - !GetAZs
+          Ref: AWS::Region
+      CidrBlock: !FindInMap
+        - VPCRanges
+        - !Ref 'CIDRRange'
+        - ProtectedSubnetAZ2
+      MapPublicIpOnLaunch: False
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PrivProtectedAZ2
+        - Key: Network
+          Value: private
+      VpcId: !Ref 'VPCBase'
+
+  IGWBase:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -IGW
+
+  VGAIGWBase:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref 'IGWBase'
+      VpcId: !Ref 'VPCBase'
+
+  RouteTablePublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPCBase'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PublicRT
+
+  RouteTablePrivateAZ1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPCBase'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PrivateAZ1RT
+  
+  RouteTablePrivateAZ2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPCBase'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -PrivateAZ2RT
+
+  RouteTableProtectedAZ1:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPCBase'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -ProtectedAZ1RT
+  
+  RouteTableProtectedAZ2:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPCBase'
+      Tags:
+        - Key: Name
+          Value: !Join
+            - ''
+            - - !Ref 'AWS::StackName'
+              - -ProtectedAZ2RT
+
+  RoutePublicDefault:
+    DependsOn:
+      - VGAIGWBase
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'RouteTablePublic'
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref 'IGWBase'
+
+  RouteAssociationPublicAZ1Default:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicNetAZ1'
+      RouteTableId: !Ref 'RouteTablePublic'
+  
+  RouteAssociationPublicAZ2Default:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicNetAZ2'
+      RouteTableId: !Ref 'RouteTablePublic'
+
+  RouteAssociationPrivateAZ1Default:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PrivateNetAZ1'
+      RouteTableId: !Ref 'RouteTablePrivateAZ1'
+  
+  RouteAssociationPrivateAZ2Default:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PrivateNetAZ2'
+      RouteTableId: !Ref 'RouteTablePrivateAZ2'
+
+  RouteAssociationProtectedAZ1Default:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'ProtectedNetAZ1'
+      RouteTableId: !Ref 'RouteTableProtectedAZ1'
+  
+  RouteAssociationProtectedAZ2Default:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'ProtectedNetAZ2'
+      RouteTableId: !Ref 'RouteTableProtectedAZ2'
+
+  NATAZ1:
+    Type: AWS::EC2::NatGateway
+    DependsOn: VGAIGWBase
+    Properties:
+      AllocationId: !GetAtt 'EIPNATAZ1.AllocationId'
+      SubnetId: !Ref 'PublicNetAZ1'
+  
+  NATAZ2:
+    Type: AWS::EC2::NatGateway
+    DependsOn: VGAIGWBase
+    Properties:
+      AllocationId: !GetAtt 'EIPNATAZ2.AllocationId'
+      SubnetId: !Ref 'PublicNetAZ2'
+
+  EIPNATAZ1:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  EIPNATAZ2:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATPrivAZ1Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'RouteTablePrivateAZ1'
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref 'NATAZ1'
+  
+  NATPrivAZ2Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'RouteTablePrivateAZ2'
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref 'NATAZ2'
+
+  NATProtectedAZ1Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'RouteTableProtectedAZ1'
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref 'NATAZ1'
+
+  NATProtectedAZ2Route:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'RouteTableProtectedAZ2'
+      DestinationCidrBlock: '0.0.0.0/0'
+      NatGatewayId: !Ref 'NATAZ2'
+
+  WebServerGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    UpdatePolicy:
+        AutoScalingRollingUpdate:
+          MaxBatchSize: 1
+          MinInstancesInService: 1
+    Properties:
+      VPCZoneIdentifier:
+        - !Ref PrivateNetAZ1
+        - !Ref PrivateNetAZ2
+      LaunchConfigurationName: !Ref 'LaunchConfig'
+      DesiredCapacity: !If [IsPrimaryRegion, '2', '0']
+      MinSize: !If [IsPrimaryRegion, '2', '0']
+      MaxSize: '4'
+      TargetGroupARNs:
+        - !Ref 'WebTargetGroup'
+      NotificationConfigurations:
+        - TopicARN: !Ref NotificationTopic
+          NotificationTypes:
+            - autoscaling:EC2_INSTANCE_LAUNCH
+            - autoscaling:EC2_INSTANCE_LAUNCH_ERROR
+            - autoscaling:EC2_INSTANCE_TERMINATE
+            - autoscaling:EC2_INSTANCE_TERMINATE_ERROR
+
+  Ec2WebRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: allowSSMParameterRetrieval
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "ssm:DescribeParameters"
+                  - "ssm:GetParameters"
+                Resource: "*"
+        - PolicyName: allowDbCredentialRetrieval
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - "secretsmanager:GetResourcePolicy"
+                  - "secretsmanager:GetSecretValue"
+                  - "secretsmanager:DescribeSecret"
+                  - "secretsmanager:ListSecretVersionIds"
+                Resource: "*"
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  EC2WebInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref 'Ec2WebRole'
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      IamInstanceProfile: !Ref 'EC2WebInstanceProfile'
+      ImageId: !Ref LatestAmiId
+      SecurityGroups:
+        - !Ref 'InstanceSecurityGroup'
+      InstanceType: t3.nano
+      UserData: 
+        Fn::Base64: !Sub
+          - |
+            #!/bin/bash -xe
+            yum install httpd -y
+            /sbin/chkconfig --levels 235 httpd on
+            service httpd start
+            echo "<h1>Hello from ${region}</h1>" > /var/www/html/index.html
+          - region: !Ref "AWS::Region"
+  WebServerScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'WebServerGroup'
+      Cooldown: '60'
+      ScalingAdjustment: 1
+  WebServerScaleDownPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref 'WebServerGroup'
+      Cooldown: '60'
+      ScalingAdjustment: -1
+  CPUAlarmHigh:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-up if CPU > 90% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 90
+      AlarmActions:
+        - !Ref 'WebServerScaleUpPolicy'
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref 'WebServerGroup'
+      ComparisonOperator: GreaterThanThreshold
+  CPUAlarmLow:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Scale-down if CPU < 70% for 10 minutes
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 70
+      AlarmActions:
+        - !Ref 'WebServerScaleDownPolicy'
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref 'WebServerGroup'
+      ComparisonOperator: LessThanThreshold
+  
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref PublicNetAZ1
+        - !Ref PublicNetAZ2
+      Type: network
+      Scheme: internet-facing
+
+  AcmCertificate:
+    Type: "AWS::CertificateManager::Certificate"
+    Properties: 
+      DomainName: !Ref CerticateFqDomainName
+      ValidationMethod: DNS
+  
+  NLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref 'WebTargetGroup'
+      LoadBalancerArn: !Ref 'NetworkLoadBalancer'
+      Port: 443
+      Protocol: TLS
+      Certificates: 
+        - CertificateArn: !Ref AcmCertificate
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref VPCBase
+      HealthCheckProtocol: TCP
+      HealthCheckPort: 80
+      HealthCheckIntervalSeconds: 10
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable HTTP access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref VPCBase
+  
+  ## Start of Aurora Global Database
+
+  MonitoringIAMRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement: 
+          - 
+            Effect: "Allow"
+            Principal: 
+              Service: 
+                - "monitoring.rds.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+    
+  MyRDSInstanceRotationSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: IsPrimaryRegion
+    Properties:
+      Name: GlobalDbCredentials
+      Description: Generated Admin RDS Credentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+      ReplicaRegions:
+        - Region: ap-southeast-1
+  #BinlogEnabledDBClusterParameterGroup:
+  #  Type: 'AWS::RDS::DBClusterParameterGroup'
+  #  Properties:
+  #    Description: Aurora Cluster Parameter Group with Binlog enabled
+  #    Family: aurora-mysql5.7
+  DBParamGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Description: !Join [ "- ", [ "Aurora DB Parameter Group for Cloudformation Stack ", !Ref "AWS::StackName" ] ]
+      Family: aurora-mysql5.7
+  RDSSubnetGroup: 
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: Subnet Group for Aurora
+      SubnetIds: 
+        - !Ref ProtectedNetAZ1
+        - !Ref ProtectedNetAZ2
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VPCBase
+      GroupDescription: Database Security Group
+      SecurityGroupIngress:
+        - ToPort: 3306
+          FromPort: 3306
+          IpProtocol: tcp
+          SourceSecurityGroupId: !GetAtt InstanceSecurityGroup.GroupId
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-db-sg
+  GlobalCluster:
+    Type: 'AWS::RDS::GlobalCluster'
+    Condition: IsPrimaryRegion
+    Properties:
+      GlobalClusterIdentifier: 'GlobalCluster'
+      SourceDBClusterIdentifier: !Ref RDSCluster
+  RDSCluster:
+    Type: 'AWS::RDS::DBCluster'
+    DeletionPolicy: Delete
+    Properties:
+      DatabaseName: !If [IsPrimaryRegion, GlobalDb, !Ref AWS::NoValue]
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      Engine: aurora-mysql
+      EngineVersion: 5.7.mysql_aurora.2.10.2
+      GlobalClusterIdentifier: !If [IsPrimaryRegion, !Ref AWS::NoValue, 'GlobalCluster']
+      MasterUsername: !If [IsPrimaryRegion, !Sub '{{resolve:secretsmanager:${MyRDSInstanceRotationSecret}::username}}', !Ref "AWS::NoValue"]
+      MasterUserPassword: !If [IsPrimaryRegion, !Sub '{{resolve:secretsmanager:${MyRDSInstanceRotationSecret}::password}}', !Ref "AWS::NoValue"]
+      VpcSecurityGroupIds:
+        - !Ref DBSecurityGroup
+      Tags:
+        -
+          Key: Name
+          Value: !Join ['-',[!Sub 'GlobalDatabaseCluster', !Ref "AWS::Region"]]
+  RDSMasterInstance:
+    Type: 'AWS::RDS::DBInstance'
+    DeletionPolicy: Delete
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref RDSCluster
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      DBParameterGroupName: default.aurora-mysql5.7
+      DBInstanceClass: db.r5.large
+      MonitoringInterval: 1
+      MonitoringRoleArn: !GetAtt MonitoringIAMRole.Arn
+      AutoMinorVersionUpgrade: true
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 7
+  RDSReplicaInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Delete
+    DependsOn: RDSMasterInstance
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref RDSCluster
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      DBParameterGroupName: default.aurora-mysql5.7
+      DBInstanceClass: db.r5.large
+      MonitoringInterval: 1
+      MonitoringRoleArn: !GetAtt MonitoringIAMRole.Arn
+      AutoMinorVersionUpgrade: true
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 7
+  
+  WriterEngineUptimeAlarm:
+    Type: "AWS::CloudWatch::Alarm"
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+      - Ref: NotificationTopic
+      AlarmDescription: 'Writer Engine Uptime for Global DB in this region'
+      Dimensions:
+      - Name: DBClusterIdentifier
+        Value:
+          Ref: RDSCluster
+      - Name: Role
+        Value: 'WRITER'
+      MetricName: 'EngineUptime'
+      Statistic: Maximum
+      Namespace: 'AWS/RDS'
+      Threshold: 1
+      Period: 10
+      ComparisonOperator: 'LessThanOrEqualToThreshold'
+      EvaluationPeriods: 1
+      TreatMissingData: 'breaching'
+
+  CPUUtilizationAlarm1:
+    Type: "AWS::CloudWatch::Alarm"
+    Condition: IsPrimaryRegion
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+      - Ref: NotificationTopic
+      AlarmDescription: 'CPU_Utilization'
+      Dimensions:
+      - Name: DBInstanceIdentifier
+        Value:
+          Ref: RDSMasterInstance
+      MetricName: CPUUtilization
+      Statistic: Maximum
+      Namespace: 'AWS/RDS'
+      Threshold: 80
+      Unit: Percent
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
+      Period: 60
+      EvaluationPeriods: 5
+      TreatMissingData: 'notBreaching'
+  CPUUtilizationAlarm2:
+    Type: "AWS::CloudWatch::Alarm"
+    Condition: IsPrimaryRegion
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+      - Ref: NotificationTopic
+      AlarmDescription: 'CPU_Utilization'
+      Dimensions:
+      - Name: DBInstanceIdentifier
+        Value:
+          Ref: RDSReplicaInstance
+      MetricName: CPUUtilization
+      Statistic: Maximum
+      Namespace: 'AWS/RDS'
+      Threshold: 80
+      Unit: Percent
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
+      Period: 60
+      EvaluationPeriods: 5
+      TreatMissingData: 'notBreaching'
+  MaxUsedTxIDsAlarm1:
+    Type: "AWS::CloudWatch::Alarm"
+    Condition: IsPrimaryRegion
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+      - Ref: NotificationTopic
+      AlarmDescription: 'Maximum Used Transaction IDs'
+      Dimensions:
+      - Name: DBInstanceIdentifier
+        Value:
+          Ref: RDSMasterInstance
+      MetricName: 'MaximumUsedTransactionIDs'
+      Statistic: Average
+      Namespace: 'AWS/RDS'
+      Threshold: 600000000
+      Unit: Count
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
+      Period: 60
+      EvaluationPeriods: 5
+      TreatMissingData: 'notBreaching'
+  MaxUsedTxIDsAlarm2:
+    Type: "AWS::CloudWatch::Alarm"
+    Condition: IsPrimaryRegion
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+      - Ref: NotificationTopic
+      AlarmDescription: 'Maximum Used Transaction IDs'
+      Dimensions:
+      - Name: DBInstanceIdentifier
+        Value:
+          Ref: RDSReplicaInstance
+      MetricName: 'MaximumUsedTransactionIDs'
+      Statistic: Average
+      Namespace: 'AWS/RDS'
+      Threshold: 600000000
+      Unit: Count
+      ComparisonOperator: 'GreaterThanOrEqualToThreshold'
+      Period: 60
+      EvaluationPeriods: 5
+      TreatMissingData: 'notBreaching'
+  FreeLocalStorageAlarm1:
+    Type: "AWS::CloudWatch::Alarm"
+    Condition: IsPrimaryRegion
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+      - Ref: NotificationTopic
+      AlarmDescription: 'Free Local Storage'
+      Dimensions:
+      - Name: DBInstanceIdentifier
+        Value:
+          Ref: RDSMasterInstance
+      MetricName: 'FreeLocalStorage'
+      Statistic: Average
+      Namespace: 'AWS/RDS'
+      Threshold: 5368709120
+      Unit: Bytes
+      ComparisonOperator: 'LessThanOrEqualToThreshold'
+      Period: 60
+      EvaluationPeriods: 5
+      TreatMissingData: 'notBreaching'
+  FreeLocalStorageAlarm2:
+    Type: "AWS::CloudWatch::Alarm"
+    Condition: IsPrimaryRegion
+    Properties:
+      ActionsEnabled: true
+      AlarmActions:
+      - Ref: NotificationTopic
+      AlarmDescription: 'Free Local Storage'
+      Dimensions:
+      - Name: DBInstanceIdentifier
+        Value:
+          Ref: RDSReplicaInstance
+      MetricName: 'FreeLocalStorage'
+      Statistic: Average
+      Namespace: 'AWS/RDS'
+      Threshold: 5368709120
+      Unit: Bytes
+      ComparisonOperator: 'LessThanOrEqualToThreshold'
+      Period: 60
+      EvaluationPeriods: 5
+      TreatMissingData: 'notBreaching'  
+  DatabaseClusterEventSubscription:
+    Type: 'AWS::RDS::EventSubscription'
+    Properties:
+      EventCategories:
+      - failover
+      - failure
+      - notification
+      SnsTopicArn: !Ref NotificationTopic
+      SourceIds: [!Ref RDSCluster]
+      SourceType: 'db-cluster'
+  DatabaseInstanceEventSubscription:
+    Type: 'AWS::RDS::EventSubscription'
+    Condition: IsPrimaryRegion
+    Properties:
+      EventCategories:
+      - availability
+      - configuration change
+      - deletion
+      - failover
+      - failure
+      - maintenance
+      - notification
+      - read replica
+      - recovery
+      - restoration
+      SnsTopicArn: !Ref NotificationTopic
+      SourceIds: 
+      - !Ref RDSMasterInstance
+      - !Ref RDSReplicaInstance
+      SourceType: 'db-instance'
+  DBParameterGroupEventSubscription:
+    Type: 'AWS::RDS::EventSubscription'
+    Properties:
+      EventCategories:
+      - configuration change
+      SnsTopicArn: !Ref NotificationTopic
+      SourceIds: [!Ref DBParamGroup]
+      SourceType: 'db-parameter-group'
+  ReaderEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Condition: IsPrimaryRegion
+    Properties:
+      Description: Cluster Reader Endpoint for the Global cluster in this region.
+      Name: global-db-reader-endpoint
+      Type: String
+      Value: !GetAtt RDSCluster.ReadEndpoint.Address
+      Tier: Standard
+  WriterEndpointParameter:
+    Type: AWS::SSM::Parameter
+    Condition: IsPrimaryRegion
+    Properties:
+      Description: Cluster Writer Endpoint for the Global cluster in this region.
+      Name: global-db-writer-endpoint
+      Type: String
+      Value: !GetAtt RDSCluster.Endpoint.Address
+      Tier: Standard
+  
+Outputs:
+  VpcId:
+    Value: !Ref VPCBase
+  NetworkLoadBalancerArn:
+    Value: !Ref NetworkLoadBalancer
+  AsgName:
+    Value: !Ref WebServerGroup
+  ApplicationDnsEndpoint:
+    Value: !GetAtt NetworkLoadBalancer.DNSName
+  DatabaseClusterArn:
+    Value: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${RDSCluster}'
+  DatabaseWriterCwAlarmArn:
+    Value: !GetAtt WriterEngineUptimeAlarm.Arn

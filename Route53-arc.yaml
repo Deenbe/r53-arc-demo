@@ -1,0 +1,238 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Amazon Route53 Application Recovery Controller cluster and routing control Demo'
+Parameters:
+  ProjectId:
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric
+      characters.
+    Default: ArcDemo
+    Description: The name of the project
+    MaxLength: '64'
+    MinLength: '1'
+    Type: String
+  r53HostedZoneId:
+    Description: The r53 Hosted Zone Id
+    Type: AWS::Route53::HostedZone::Id
+  DNSDomainName:
+    Description: The base FQDN associated with the r53 Hosted Zone provided
+    Type: String
+  Cell1DnsEntrypoint:
+    Description: The FQDN for cell 1 (the Load Balancer DNS hostname)
+    Type: String
+  Cell1HostedZoneId:
+    Description: The hosted zone for the cell 1
+    Type: String
+  Cell1LoadBalancerArn:
+    Description: The load balancer Arn for cell 1
+    Type: String
+  Cell2DnsEntrypoint:
+    Description: The FQDN for cell 2 (the Load Balancer DNS hostname)
+    Type: String
+  Cell2HostedZoneId:
+    Description: The hosted zone for the cell 2
+    Type: String
+  Cell2LoadBalancerArn:
+    Description: The load balancer Arn for cell 2
+    Type: String
+
+Resources:
+
+  SyntheticsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectId}-synthetics-results"
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  
+  CanaryExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: 's3:PutObject'
+                Resource: !Sub "${SyntheticsBucket.Arn}/*"
+              - Effect: Allow
+                Action: 's3:GetBucketLocation'
+                Resource: !Sub "${SyntheticsBucket.Arn}"
+              - Effect: Allow
+                Action: 
+                  - 's3:ListAllMyBuckets'
+                  - 'cloudwatch:PutMetricData'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: "*"
+
+  SyntheticsCanary:
+    Type: 'AWS::Synthetics::Canary'
+    DependsOn: SyntheticsBucket
+    Properties:
+      Name: 'r53-arc-canary'
+      ExecutionRoleArn: !GetAtt CanaryExecutionRole.Arn
+      Code: {Handler: pageLoadBlueprint.handler, Script: !Sub "var synthetics = require('Synthetics');\nconst log = require('SyntheticsLogger');\nconst pageLoadBlueprint = async function () {\n// INSERT URL here\nconst URL = \"https://${ProjectId}.${DNSDomainName}\";\n\nlet page = await synthetics.getPage();\nconst response = await page.goto(URL, {waitUntil: 'domcontentloaded', timeout: 30000});\n//Wait for page to render.\n//Increase or decrease wait time based on endpoint being monitored.\nawait page.waitFor(15000);\nawait synthetics.takeScreenshot('loaded', 'loaded');\nlet pageTitle = await page.title();\nlog.info('Page title: ' + pageTitle);\nif (response.status() !== 200) {\n     throw \"Failed to load page!\";\n}\n};\n\nexports.handler = async () => {\nreturn await pageLoadBlueprint();\n};\n"}
+      ArtifactS3Location: !Sub "s3://${SyntheticsBucket}"
+      RuntimeVersion: syn-nodejs-puppeteer-3.7
+      Schedule: {Expression: 'rate(1 minute)', DurationInSeconds: 3600}
+      RunConfig: {TimeoutInSeconds: 60}
+      FailureRetentionPeriod: 30
+      SuccessRetentionPeriod: 30
+      StartCanaryAfterCreation: true
+      DeleteLambdaResourcesOnCanaryDeletion: true
+
+  Cluster:
+    Type: AWS::Route53RecoveryControl::Cluster
+    Properties:
+      Name: !Sub ${ProjectId}-Cluster
+
+  ControlPanel:
+    Type: AWS::Route53RecoveryControl::ControlPanel
+    Properties:
+      Name: !Sub ${ProjectId}-ControlPanel
+      ClusterArn: !Ref Cluster
+
+  RoutingControlCell1:
+    Type: AWS::Route53RecoveryControl::RoutingControl
+    Properties:
+      Name: !Sub ${ProjectId}-Cell1-Sydney
+      ClusterArn: !Ref Cluster
+      ControlPanelArn: !Ref ControlPanel
+  
+  RoutingControlCell2:
+    Type: AWS::Route53RecoveryControl::RoutingControl
+    Properties:
+      Name: !Sub ${ProjectId}-Cell2-Singapore
+      ClusterArn: !Ref Cluster
+      ControlPanelArn: !Ref ControlPanel
+  
+  SafetyRuleMinCellsActive:
+    Type: AWS::Route53RecoveryControl::SafetyRule
+    Properties:
+      Name: !Sub ${ProjectId}-MinCellsActive
+      ControlPanelArn: !Ref ControlPanel
+      AssertionRule:
+        WaitPeriodMs: 5000
+        AssertedControls:
+          - !Ref RoutingControlCell1
+          - !Ref RoutingControlCell2
+      RuleConfig:
+        Type: ATLEAST
+        Threshold: 1
+        Inverted: false
+
+  HealthCheckCell1:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: "RECOVERY_CONTROL"
+        RoutingControlArn: !Ref RoutingControlCell1
+  
+  HealthCheckCell2:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: "RECOVERY_CONTROL"
+        RoutingControlArn: !Ref RoutingControlCell2
+  
+  Cell1:
+    Type: AWS::Route53RecoveryReadiness::Cell
+    Properties:
+      CellName: !Sub ${ProjectId}-Cell1
+
+  Cell2:
+    Type: AWS::Route53RecoveryReadiness::Cell
+    Properties:
+      CellName: !Sub ${ProjectId}-Cell2
+  
+  RecoveryGroup:
+    Type: AWS::Route53RecoveryReadiness::RecoveryGroup
+    Properties:
+      RecoveryGroupName: !Sub ${ProjectId}-RecoveryGroup
+      Cells: 
+        - !GetAtt Cell1.CellArn
+        - !GetAtt Cell2.CellArn
+  
+  HealthCheckedDNS:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref r53HostedZoneId
+      Comment: Weighted RR for global cells.
+      RecordSets:
+      - Name: !Sub ${ProjectId}.${DNSDomainName}.
+        Type: A
+        SetIdentifier: Sydney
+        Weight: '100'
+        HealthCheckId: !Ref HealthCheckCell1
+        AliasTarget:
+          HostedZoneId: !Ref Cell1HostedZoneId
+          DNSName: !Ref Cell1DnsEntrypoint
+      - Name: !Sub ${ProjectId}.${DNSDomainName}.
+        Type: A
+        SetIdentifier: Singapore
+        Weight: '100'
+        HealthCheckId: !Ref HealthCheckCell2
+        AliasTarget:
+          HostedZoneId: !Ref Cell2HostedZoneId
+          DNSName: !Ref Cell2DnsEntrypoint
+  
+  DnsArcResourceSet:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+      ResourceSetType: 'AWS::Route53RecoveryReadiness::DNSTargetResource'
+      ResourceSetName: !Sub '${AWS::StackName}-Dns'
+      Resources:
+        - DnsTargetResource:
+            DomainName: !Sub ${ProjectId}.${DNSDomainName}.
+            HostedZoneArn: !Sub "arn:${AWS::Partition}:route53::${AWS::AccountId}:hostedzone/${r53HostedZoneId}"
+            RecordType: "A"
+            RecordSetId: "Sydney"
+            TargetResource:
+              NLBResource:
+                Arn: !Ref Cell1LoadBalancerArn
+          ReadinessScopes:
+            - !GetAtt RecoveryGroup.RecoveryGroupArn
+        - DnsTargetResource:
+            DomainName: !Sub ${ProjectId}.${DNSDomainName}.
+            HostedZoneArn: !Sub "arn:${AWS::Partition}:route53::${AWS::AccountId}:hostedzone/${r53HostedZoneId}"
+            RecordType: "A"
+            RecordSetId: "Singapore"
+            TargetResource:
+              NLBResource:
+                Arn: !Ref Cell2LoadBalancerArn
+          ReadinessScopes:
+            - !GetAtt RecoveryGroup.RecoveryGroupArn
+
+  DnsReadinessCheck:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub '${AWS::StackName}-DnsReadinessCheck'
+      ResourceSetName: !Ref DnsArcResourceSet
+    
+Outputs:
+  ClusterArn:
+    Value: !Ref Cluster
+  Cell1Arn:
+    Value: !GetAtt Cell1.CellArn
+  Cell1HealthCheckId:
+    Value: !Ref HealthCheckCell1
+  Cell2Arn:
+    Value: !GetAtt Cell2.CellArn
+  Cell2HealthCheckId:
+    Value: !Ref HealthCheckCell2

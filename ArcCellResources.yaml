@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: VPC CloudFormation Stack
+Parameters:
+  Route53ArcCellArn:
+    Type: String
+  VpcArn:
+    Type: String
+  AsgArn:
+    Type: String
+  NetworkLoadBalancerArn:
+    Type: String
+  DbClusterArn:
+    Type: String
+  DbCwAlarmArn:
+    Type: String
+  
+Resources:
+  VpcArcResourceSet:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+      ResourceSetType: 'AWS::EC2::VPC'
+      ResourceSetName: !Sub '${AWS::StackName}-Vpc'
+      Resources:
+        - ReadinessScopes:
+            - !Ref Route53ArcCellArn
+          ResourceArn: !Ref VpcArn
+  VpcReadinessCheck:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub '${AWS::StackName}-VpcReadinessCheck'
+      ResourceSetName: !Ref VpcArcResourceSet
+  AsgArcResourceSet:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+      ResourceSetType: 'AWS::AutoScaling::AutoScalingGroup'
+      ResourceSetName: !Sub '${AWS::StackName}-Asgs'
+      Resources:
+        - ReadinessScopes:
+            - !Ref Route53ArcCellArn
+          ResourceArn: !Ref AsgArn
+  AsgReadinessCheck:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub '${AWS::StackName}-AsgReadinessCheck'
+      ResourceSetName: !Ref AsgArcResourceSet
+  DbArcResourceSet:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+      ResourceSetType: 'AWS::RDS::DBCluster'
+      ResourceSetName: !Sub '${AWS::StackName}-Db'
+      Resources:
+        - ReadinessScopes:
+            - !Ref Route53ArcCellArn
+          ResourceArn: !Ref DbClusterArn
+  DbReadinessCheck:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub '${AWS::StackName}-DbReadinessCheck'
+      ResourceSetName: !Ref DbArcResourceSet
+  
+  GlobalDbWriterAlarmResourceSet:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+      ResourceSetType: 'AWS::CloudWatch::Alarm'
+      ResourceSetName: !Sub '${AWS::StackName}-DbWriterCwAlarm'
+      Resources:
+        - ReadinessScopes:
+            - !Ref Route53ArcCellArn
+          ResourceArn: !Ref DbCwAlarmArn
+  GlobalDbWriterAlarmReadinessCheck:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub '${AWS::StackName}-DbWriterReadinessCheck'
+      ResourceSetName: !Ref GlobalDbWriterAlarmResourceSet
+
+  NlbArcResourceSet:
+    Type: AWS::Route53RecoveryReadiness::ResourceSet
+    Properties:
+      ResourceSetType: 'AWS::ElasticLoadBalancingV2::LoadBalancer'
+      ResourceSetName: !Sub '${AWS::StackName}-Nlb'
+      Resources:
+        - ReadinessScopes:
+            - !Ref Route53ArcCellArn
+          ResourceArn: !Ref NetworkLoadBalancerArn
+  NlbReadinessCheck:
+    Type: AWS::Route53RecoveryReadiness::ReadinessCheck
+    Properties:
+      ReadinessCheckName: !Sub '${AWS::StackName}-NlbReadinessCheck'
+      ResourceSetName: !Ref NlbArcResourceSet
