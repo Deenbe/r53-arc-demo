@@ -2,10 +2,10 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Amazon Route53 Application Recovery Controller cluster and routing control Demo'
 Parameters:
   ProjectId:
-    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    AllowedPattern: '[a-z]*'
     ConstraintDescription: Must begin with a letter and contain only alphanumeric
       characters.
-    Default: ArcDemo
+    Default: arc
     Description: The name of the project
     MaxLength: '64'
     MinLength: '1'
@@ -16,23 +16,33 @@ Parameters:
   DNSDomainName:
     Description: The base FQDN associated with the r53 Hosted Zone provided
     Type: String
-  Cell1DnsEntrypoint:
-    Description: The FQDN for cell 1 (the Load Balancer DNS hostname)
+  Cell1LocationFriendlyName:
+    Description: The location of cell 1 (used for naming things)
     Type: String
-  Cell1HostedZoneId:
-    Description: The hosted zone for the cell 1
+    Default: "Sydney"
+    AllowedPattern: '^[a-zA-Z0-9]*$'
+  Cell1LoadBalancerDns:
+    Description: The FQDN for the Cell 1 Load Balancer
+    Type: String
+  Cell1LoadBalancerHostedZoneId:
+    Description: The hosted zone for the Cell 1 Load Balancer
     Type: String
   Cell1LoadBalancerArn:
-    Description: The load balancer Arn for cell 1
+    Description: The Arn for the Cell 1 Load Balancer
     Type: String
-  Cell2DnsEntrypoint:
-    Description: The FQDN for cell 2 (the Load Balancer DNS hostname)
+  Cell2LocationFriendlyName:
+    Description: The location of cell 2 (used for naming things)
     Type: String
-  Cell2HostedZoneId:
-    Description: The hosted zone for the cell 2
+    Default: "Singapore"
+    AllowedPattern: '^[a-zA-Z0-9]*$'
+  Cell2LoadBalancerDns:
+    Description: The FQDN for the Cell 2 Load Balancer
+    Type: String
+  Cell2LoadBalancerHostedZoneId:
+    Description: The hosted zone for the Cell 2 Load Balancer
     Type: String
   Cell2LoadBalancerArn:
-    Description: The load balancer Arn for cell 2
+    Description: The Arn for the Cell 2 Load Balancer
     Type: String
 
 Resources:
@@ -48,7 +58,7 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
   
-  CanaryExecutionRole:
+  SyntheticsExecutionRole:
     Type: 'AWS::IAM::Role'
     Properties:
       AssumeRolePolicyDocument:
@@ -85,8 +95,8 @@ Resources:
     Type: 'AWS::Synthetics::Canary'
     DependsOn: SyntheticsBucket
     Properties:
-      Name: 'r53-arc-canary'
-      ExecutionRoleArn: !GetAtt CanaryExecutionRole.Arn
+      Name: !Sub "${ProjectId}-arc-canary"
+      ExecutionRoleArn: !GetAtt SyntheticsExecutionRole.Arn
       Code: {Handler: pageLoadBlueprint.handler, Script: !Sub "var synthetics = require('Synthetics');\nconst log = require('SyntheticsLogger');\nconst pageLoadBlueprint = async function () {\n// INSERT URL here\nconst URL = \"https://${ProjectId}.${DNSDomainName}\";\n\nlet page = await synthetics.getPage();\nconst response = await page.goto(URL, {waitUntil: 'domcontentloaded', timeout: 30000});\n//Wait for page to render.\n//Increase or decrease wait time based on endpoint being monitored.\nawait page.waitFor(15000);\nawait synthetics.takeScreenshot('loaded', 'loaded');\nlet pageTitle = await page.title();\nlog.info('Page title: ' + pageTitle);\nif (response.status() !== 200) {\n     throw \"Failed to load page!\";\n}\n};\n\nexports.handler = async () => {\nreturn await pageLoadBlueprint();\n};\n"}
       ArtifactS3Location: !Sub "s3://${SyntheticsBucket}"
       RuntimeVersion: syn-nodejs-puppeteer-3.7
@@ -111,14 +121,14 @@ Resources:
   RoutingControlCell1:
     Type: AWS::Route53RecoveryControl::RoutingControl
     Properties:
-      Name: !Sub ${ProjectId}-Cell1-Sydney
+      Name: !Sub ${ProjectId}-Cell1-${Cell1LocationFriendlyName}
       ClusterArn: !Ref Cluster
       ControlPanelArn: !Ref ControlPanel
   
   RoutingControlCell2:
     Type: AWS::Route53RecoveryControl::RoutingControl
     Properties:
-      Name: !Sub ${ProjectId}-Cell2-Singapore
+      Name: !Sub ${ProjectId}-Cell2-${Cell2LocationFriendlyName}
       ClusterArn: !Ref Cluster
       ControlPanelArn: !Ref ControlPanel
   
@@ -143,6 +153,9 @@ Resources:
       HealthCheckConfig:
         Type: "RECOVERY_CONTROL"
         RoutingControlArn: !Ref RoutingControlCell1
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub "Arc ${Cell1LocationFriendlyName}-HealthCheck"
   
   HealthCheckCell2:
     Type: AWS::Route53::HealthCheck
@@ -150,16 +163,19 @@ Resources:
       HealthCheckConfig:
         Type: "RECOVERY_CONTROL"
         RoutingControlArn: !Ref RoutingControlCell2
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub "Arc ${Cell2LocationFriendlyName}-HealthCheck"
   
   Cell1:
     Type: AWS::Route53RecoveryReadiness::Cell
     Properties:
-      CellName: !Sub ${ProjectId}-Cell1
+      CellName: !Sub ${ProjectId}-${Cell1LocationFriendlyName}-Cell
 
   Cell2:
     Type: AWS::Route53RecoveryReadiness::Cell
     Properties:
-      CellName: !Sub ${ProjectId}-Cell2
+      CellName: !Sub ${ProjectId}-${Cell2LocationFriendlyName}-Cell
   
   RecoveryGroup:
     Type: AWS::Route53RecoveryReadiness::RecoveryGroup
@@ -177,20 +193,20 @@ Resources:
       RecordSets:
       - Name: !Sub ${ProjectId}.${DNSDomainName}.
         Type: A
-        SetIdentifier: Sydney
+        SetIdentifier: !Ref Cell1LocationFriendlyName
         Weight: '100'
         HealthCheckId: !Ref HealthCheckCell1
         AliasTarget:
-          HostedZoneId: !Ref Cell1HostedZoneId
-          DNSName: !Ref Cell1DnsEntrypoint
+          HostedZoneId: !Ref Cell1LoadBalancerHostedZoneId
+          DNSName: !Ref Cell1LoadBalancerDns
       - Name: !Sub ${ProjectId}.${DNSDomainName}.
         Type: A
-        SetIdentifier: Singapore
+        SetIdentifier: !Ref Cell2LocationFriendlyName
         Weight: '100'
         HealthCheckId: !Ref HealthCheckCell2
         AliasTarget:
-          HostedZoneId: !Ref Cell2HostedZoneId
-          DNSName: !Ref Cell2DnsEntrypoint
+          HostedZoneId: !Ref Cell2LoadBalancerHostedZoneId
+          DNSName: !Ref Cell2LoadBalancerDns
   
   DnsArcResourceSet:
     Type: AWS::Route53RecoveryReadiness::ResourceSet
@@ -202,7 +218,7 @@ Resources:
             DomainName: !Sub ${ProjectId}.${DNSDomainName}.
             HostedZoneArn: !Sub "arn:${AWS::Partition}:route53::${AWS::AccountId}:hostedzone/${r53HostedZoneId}"
             RecordType: "A"
-            RecordSetId: "Sydney"
+            RecordSetId: !Ref Cell1LocationFriendlyName
             TargetResource:
               NLBResource:
                 Arn: !Ref Cell1LoadBalancerArn
@@ -212,7 +228,7 @@ Resources:
             DomainName: !Sub ${ProjectId}.${DNSDomainName}.
             HostedZoneArn: !Sub "arn:${AWS::Partition}:route53::${AWS::AccountId}:hostedzone/${r53HostedZoneId}"
             RecordType: "A"
-            RecordSetId: "Singapore"
+            RecordSetId: !Ref Cell2LocationFriendlyName
             TargetResource:
               NLBResource:
                 Arn: !Ref Cell2LoadBalancerArn
@@ -226,13 +242,9 @@ Resources:
       ResourceSetName: !Ref DnsArcResourceSet
     
 Outputs:
-  ClusterArn:
+  ArcClusterArn:
     Value: !Ref Cluster
-  Cell1Arn:
-    Value: !GetAtt Cell1.CellArn
-  Cell1HealthCheckId:
-    Value: !Ref HealthCheckCell1
-  Cell2Arn:
-    Value: !GetAtt Cell2.CellArn
-  Cell2HealthCheckId:
-    Value: !Ref HealthCheckCell2
+  ControlPanelArn:
+    Value: !Ref ControlPanel
+  ArcEndpoints:
+    Value: !GetAtt Cluster.ClusterEndpoints

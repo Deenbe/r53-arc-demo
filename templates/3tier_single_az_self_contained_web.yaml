@@ -20,6 +20,9 @@ Parameters:
     AllowedValues:
       - 'Yes'
       - 'No'
+  NotificationEmail:
+    Description: Email address any notifications should be sent to
+    Type: String
 Conditions:
   IsPrimaryRegion: !Equals 
     - !Ref PrimaryRegion
@@ -46,7 +49,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       Subscription:
-        - Endpoint: 'jonesaws@amazon.com'
+        - Endpoint: !Ref NotificationEmail
           Protocol: email
   VPCBase:
     Type: AWS::EC2::VPC
@@ -370,7 +373,9 @@ Resources:
       VPCZoneIdentifier:
         - !Ref PrivateNetAZ1
         - !Ref PrivateNetAZ2
-      LaunchConfigurationName: !Ref 'LaunchConfig'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
       DesiredCapacity: !If [IsPrimaryRegion, '2', '0']
       MinSize: !If [IsPrimaryRegion, '2', '0']
       MaxSize: '4'
@@ -420,29 +425,35 @@ Resources:
       Path: /
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  
   EC2WebInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: /
       Roles:
         - !Ref 'Ec2WebRole'
-  LaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
     Properties:
-      IamInstanceProfile: !Ref 'EC2WebInstanceProfile'
-      ImageId: !Ref LatestAmiId
-      SecurityGroups:
-        - !Ref 'InstanceSecurityGroup'
-      InstanceType: t3.nano
-      UserData: 
-        Fn::Base64: !Sub
-          - |
-            #!/bin/bash -xe
-            yum install httpd -y
-            /sbin/chkconfig --levels 235 httpd on
-            service httpd start
-            echo "<h1>Hello from ${region}</h1>" > /var/www/html/index.html
-          - region: !Ref "AWS::Region"
+      LaunchTemplateName: ResilientApp
+      LaunchTemplateData:
+        IamInstanceProfile:
+          Arn: !GetAtt EC2WebInstanceProfile.Arn
+        ImageId: !Ref LatestAmiId
+        InstanceType: t3.nano
+        SecurityGroupIds:
+          - !Ref 'InstanceSecurityGroup'
+        UserData: 
+          Fn::Base64: !Sub
+            - |
+              #!/bin/bash -xe
+              yum install httpd -y
+              /sbin/chkconfig --levels 235 httpd on
+              service httpd start
+              echo "<h1>Hello from ${region}</h1>" > /var/www/html/index.html
+            - region: !Ref "AWS::Region"
+  
   WebServerScaleUpPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
@@ -450,6 +461,7 @@ Resources:
       AutoScalingGroupName: !Ref 'WebServerGroup'
       Cooldown: '60'
       ScalingAdjustment: 1
+
   WebServerScaleDownPolicy:
     Type: AWS::AutoScaling::ScalingPolicy
     Properties:
@@ -457,6 +469,7 @@ Resources:
       AutoScalingGroupName: !Ref 'WebServerGroup'
       Cooldown: '60'
       ScalingAdjustment: -1
+  
   CPUAlarmHigh:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -473,6 +486,7 @@ Resources:
         - Name: AutoScalingGroupName
           Value: !Ref 'WebServerGroup'
       ComparisonOperator: GreaterThanThreshold
+  
   CPUAlarmLow:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -570,16 +584,13 @@ Resources:
         ExcludeCharacters: '"@/\'
       ReplicaRegions:
         - Region: ap-southeast-1
-  #BinlogEnabledDBClusterParameterGroup:
-  #  Type: 'AWS::RDS::DBClusterParameterGroup'
-  #  Properties:
-  #    Description: Aurora Cluster Parameter Group with Binlog enabled
-  #    Family: aurora-mysql5.7
+  
   DBParamGroup:
     Type: AWS::RDS::DBParameterGroup
     Properties:
       Description: !Join [ "- ", [ "Aurora DB Parameter Group for Cloudformation Stack ", !Ref "AWS::StackName" ] ]
       Family: aurora-mysql5.7
+  
   RDSSubnetGroup: 
     Type: "AWS::RDS::DBSubnetGroup"
     Properties: 
@@ -587,6 +598,7 @@ Resources:
       SubnetIds: 
         - !Ref ProtectedNetAZ1
         - !Ref ProtectedNetAZ2
+  
   DBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -600,12 +612,14 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-db-sg
+  
   GlobalCluster:
     Type: 'AWS::RDS::GlobalCluster'
     Condition: IsPrimaryRegion
     Properties:
       GlobalClusterIdentifier: 'GlobalCluster'
       SourceDBClusterIdentifier: !Ref RDSCluster
+  
   RDSCluster:
     Type: 'AWS::RDS::DBCluster'
     DeletionPolicy: Delete
@@ -623,6 +637,7 @@ Resources:
         -
           Key: Name
           Value: !Join ['-',[!Sub 'GlobalDatabaseCluster', !Ref "AWS::Region"]]
+  
   RDSMasterInstance:
     Type: 'AWS::RDS::DBInstance'
     DeletionPolicy: Delete
@@ -637,6 +652,7 @@ Resources:
       AutoMinorVersionUpgrade: true
       EnablePerformanceInsights: true
       PerformanceInsightsRetentionPeriod: 7
+  
   RDSReplicaInstance:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Delete
@@ -696,6 +712,7 @@ Resources:
       Period: 60
       EvaluationPeriods: 5
       TreatMissingData: 'notBreaching'
+  
   CPUUtilizationAlarm2:
     Type: "AWS::CloudWatch::Alarm"
     Condition: IsPrimaryRegion
@@ -717,6 +734,7 @@ Resources:
       Period: 60
       EvaluationPeriods: 5
       TreatMissingData: 'notBreaching'
+  
   MaxUsedTxIDsAlarm1:
     Type: "AWS::CloudWatch::Alarm"
     Condition: IsPrimaryRegion
@@ -738,6 +756,7 @@ Resources:
       Period: 60
       EvaluationPeriods: 5
       TreatMissingData: 'notBreaching'
+  
   MaxUsedTxIDsAlarm2:
     Type: "AWS::CloudWatch::Alarm"
     Condition: IsPrimaryRegion
@@ -759,6 +778,7 @@ Resources:
       Period: 60
       EvaluationPeriods: 5
       TreatMissingData: 'notBreaching'
+  
   FreeLocalStorageAlarm1:
     Type: "AWS::CloudWatch::Alarm"
     Condition: IsPrimaryRegion
@@ -780,6 +800,7 @@ Resources:
       Period: 60
       EvaluationPeriods: 5
       TreatMissingData: 'notBreaching'
+  
   FreeLocalStorageAlarm2:
     Type: "AWS::CloudWatch::Alarm"
     Condition: IsPrimaryRegion
@@ -801,6 +822,7 @@ Resources:
       Period: 60
       EvaluationPeriods: 5
       TreatMissingData: 'notBreaching'  
+  
   DatabaseClusterEventSubscription:
     Type: 'AWS::RDS::EventSubscription'
     Properties:
@@ -811,6 +833,7 @@ Resources:
       SnsTopicArn: !Ref NotificationTopic
       SourceIds: [!Ref RDSCluster]
       SourceType: 'db-cluster'
+  
   DatabaseInstanceEventSubscription:
     Type: 'AWS::RDS::EventSubscription'
     Condition: IsPrimaryRegion
@@ -831,6 +854,7 @@ Resources:
       - !Ref RDSMasterInstance
       - !Ref RDSReplicaInstance
       SourceType: 'db-instance'
+  
   DBParameterGroupEventSubscription:
     Type: 'AWS::RDS::EventSubscription'
     Properties:
@@ -839,6 +863,7 @@ Resources:
       SnsTopicArn: !Ref NotificationTopic
       SourceIds: [!Ref DBParamGroup]
       SourceType: 'db-parameter-group'
+  
   ReaderEndpointParameter:
     Type: AWS::SSM::Parameter
     Condition: IsPrimaryRegion
@@ -848,6 +873,7 @@ Resources:
       Type: String
       Value: !GetAtt RDSCluster.ReadEndpoint.Address
       Tier: Standard
+  
   WriterEndpointParameter:
     Type: AWS::SSM::Parameter
     Condition: IsPrimaryRegion
@@ -859,15 +885,15 @@ Resources:
       Tier: Standard
   
 Outputs:
-  VpcId:
-    Value: !Ref VPCBase
-  NetworkLoadBalancerArn:
-    Value: !Ref NetworkLoadBalancer
-  AsgName:
-    Value: !Ref WebServerGroup
   ApplicationDnsEndpoint:
     Value: !GetAtt NetworkLoadBalancer.DNSName
-  DatabaseClusterArn:
-    Value: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:${RDSCluster}'
-  DatabaseWriterCwAlarmArn:
+  AsgName:
+    Value: !Ref WebServerGroup
+  DbClusterArn:
+    Value: !Sub 'arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:cluster:${RDSCluster}'
+  DbCwAlarmArn:
     Value: !GetAtt WriterEngineUptimeAlarm.Arn
+  NetworkLoadBalancerArn:
+    Value: !Ref NetworkLoadBalancer
+  VpcArn:
+    Value: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPCBase}"
