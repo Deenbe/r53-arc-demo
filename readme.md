@@ -2,7 +2,7 @@
 This is still very much a work in progress, please contact jonesaws@amazon.com with questions and/or feedback.
 
 ## Prerequisites
-Public Route53 Hosted Zone
+Public Route53 Hosted Zone (this is not included in the scope of this demo and must be setup seperately).
 
 ## CloudFormation Templates
 ## Application
@@ -13,7 +13,7 @@ Application template, deployed into both a primary and secondary region.  The te
 
 ![Application Architecture](./images/r53_Arc_demo.png)
 
-## Route53 Application Recovery Controller Common
+## Route53 Application Recovery Controller Common Components
 
 `./templates/Route53-arc.yaml`
 
@@ -36,7 +36,7 @@ This template deploys shared components including:
   - Global ResourceSet
   - Global Readiness Check
 
-## Route53 Application Recovery Controller Cell
+## Route53 Application Recovery Controller Cell Components
 
 `./templates/ArcCellResources.yaml`
 
