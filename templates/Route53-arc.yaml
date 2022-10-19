@@ -245,6 +245,4 @@ Outputs:
   ArcClusterArn:
     Value: !Ref Cluster
   ControlPanelArn:
-    Value: !Ref ControlPanel
-  ArcEndpoints:
-    Value: !GetAtt Cluster.ClusterEndpoints
+    Value: !Ref ControlPanel  
