@@ -895,5 +895,7 @@ Outputs:
     Value: !GetAtt WriterEngineUptimeAlarm.Arn
   NetworkLoadBalancerArn:
     Value: !Ref NetworkLoadBalancer
+  LoadBalancerHostedZoneId:
+    Value: !GetAtt NetworkLoadBalancer.CanonicalHostedZoneID
   VpcArn:
     Value: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:vpc/${VPCBase}"
