@@ -7,7 +7,7 @@ Public Route53 Hosted Zone (this is not included in the scope of this demo and m
 ## CloudFormation Templates
 ## Application
 
-`./templates/3tier_single_az_self_contained_web.yaml`
+`./templates/Application.yaml`
 
 Application template, deployed into both a primary and secondary region.  The template deploys the following basic application architecture:
 
@@ -15,7 +15,7 @@ Application template, deployed into both a primary and secondary region.  The te
 
 ## Route53 Application Recovery Controller Common Components
 
-`./templates/Route53-arc.yaml`
+`./templates/ArcShared.yaml`
 
 **Must be deployed into us-east-1**
 
