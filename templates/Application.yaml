@@ -15,6 +15,12 @@ Parameters:
     Description: The base FQDN associated with your r53 Hosted Zone
     Type: String
   ProjectId:
+    AllowedPattern: '[a-z]*'
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters. 
+    Default: arc
+    Description: The name of the project
+    MaxLength: '64'
+    MinLength: '1'
     Type: String
   PrimaryRegion:
     Description: Is this a Primary region?
