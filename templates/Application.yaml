@@ -11,7 +11,10 @@ Parameters:
   LatestAmiId:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
-  CerticateFqDomainName:
+  DNSDomainName:
+    Description: The base FQDN associated with your r53 Hosted Zone
+    Type: String
+  ProjectId:
     Type: String
   PrimaryRegion:
     Description: Is this a Primary region?
@@ -516,7 +519,7 @@ Resources:
   AcmCertificate:
     Type: "AWS::CertificateManager::Certificate"
     Properties: 
-      DomainName: !Ref CerticateFqDomainName
+      DomainName: !Sub ${ProjectId}.${DNSDomainName}
       ValidationMethod: DNS
   
   NLBListener:
