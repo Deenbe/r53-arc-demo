@@ -3,8 +3,7 @@ Description: 'Amazon Route53 Application Recovery Controller cluster and routing
 Parameters:
   ProjectId:
     AllowedPattern: '[a-z]*'
-    ConstraintDescription: Must begin with a letter and contain only alphanumeric
-      characters.
+    ConstraintDescription: Must begin with a letter and contain only alphanumeric characters. Must be the same project name entered as a parameter for the "Application" Cloudformation Template. 
     Default: arc
     Description: The name of the project
     MaxLength: '64'
@@ -14,7 +13,7 @@ Parameters:
     Description: The r53 Hosted Zone Id
     Type: AWS::Route53::HostedZone::Id
   DNSDomainName:
-    Description: The base FQDN associated with the r53 Hosted Zone provided
+    Description: The base FQDN associated with the Route53 Hosted Zone provided. Must be the same FQDN entered as a parameter for the "Application" Cloudformation Template. 
     Type: String
   Cell1LocationFriendlyName:
     Description: The location of cell 1 (used for naming things)
@@ -50,7 +49,7 @@ Resources:
   SyntheticsBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${ProjectId}-synthetics-results"
+      BucketName: !Sub "${ProjectId}-synthetics-results-${AWS::StackId}"
       AccessControl: Private
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
@@ -95,7 +94,7 @@ Resources:
     Type: 'AWS::Synthetics::Canary'
     DependsOn: SyntheticsBucket
     Properties:
-      Name: !Sub "${ProjectId}-arc-canary"
+      Name: !Sub "${ProjectId}-canary"
       ExecutionRoleArn: !GetAtt SyntheticsExecutionRole.Arn
       Code: {Handler: pageLoadBlueprint.handler, Script: !Sub "var synthetics = require('Synthetics');\nconst log = require('SyntheticsLogger');\nconst pageLoadBlueprint = async function () {\n// INSERT URL here\nconst URL = \"https://${ProjectId}.${DNSDomainName}\";\n\nlet page = await synthetics.getPage();\nconst response = await page.goto(URL, {waitUntil: 'domcontentloaded', timeout: 30000});\n//Wait for page to render.\n//Increase or decrease wait time based on endpoint being monitored.\nawait page.waitFor(15000);\nawait synthetics.takeScreenshot('loaded', 'loaded');\nlet pageTitle = await page.title();\nlog.info('Page title: ' + pageTitle);\nif (response.status() !== 200) {\n     throw \"Failed to load page!\";\n}\n};\n\nexports.handler = async () => {\nreturn await pageLoadBlueprint();\n};\n"}
       ArtifactS3Location: !Sub "s3://${SyntheticsBucket}"
